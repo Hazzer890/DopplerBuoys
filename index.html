@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DopplerBuoys</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: light;
+  --plane: #f3f5f7; --surface: #ffffff; --ink: #191919; --ink-2: #5f6368;
+  --line: #e2e5e9; --axis: #c2c2c2; --sea: #1757ac; --buoy: #ffcf33;
+  --bearing: #f47230; --doppler: #00b894; --tdoa: #6a4ce2;
+  --sans: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cond: "Barlow Semi Condensed", "Barlow", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--plane); color: var(--ink); font: 15px/1.45 var(--sans); }
+header { padding: 20px 24px 4px; }
+h1 { font: 600 26px/1.1 var(--cond); margin: 0; letter-spacing: -0.01em; }
+header p { margin: 2px 0 0; color: var(--ink-2); }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; padding: 16px 24px 40px; max-width: 1240px; }
+@media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px 32px; } header { padding: 16px 16px 0; } }
+section, aside { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.chart { padding: 16px; }
+.chart + .chart { margin-top: 20px; }
+h2 { font: 600 17px/1.2 var(--cond); margin: 0 0 10px; }
+
+.modes { display: inline-flex; margin-bottom: 14px; }
+.modes button { border-radius: 0; margin-left: -1px; }
+.modes button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+.modes button:last-child { border-radius: 0 4px 4px 0; }
+.modes button[aria-pressed=true] { background: var(--ink); border-color: var(--ink); color: #fff; position: relative; }
+
+.readout { display: grid; grid-template-columns: repeat(4, auto); gap: 6px 28px; justify-content: start; margin: 0 0 12px; }
+.readout dt { color: var(--ink-2); font-size: 13px; }
+.readout dd { margin: 0; font: 600 24px/1.15 var(--cond); }
+@media (max-width: 620px) { .readout { grid-template-columns: repeat(2, auto); } #legend .t { flex-basis: 100%; margin-bottom: 4px; } }
+
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+button, select { font: 500 14px var(--sans); border-radius: 4px; border: 1px solid var(--axis); background: var(--surface); color: var(--ink); padding: 7px 12px; cursor: pointer; }
+button.primary { background: var(--sea); border-color: var(--sea); color: #fff; }
+button:disabled { opacity: 0.55; cursor: progress; }
+:focus-visible { outline: 2px solid var(--sea); outline-offset: 2px; }
+#status { color: var(--ink-2); font-size: 14px; min-height: 1.45em; }
+#status.error { color: #b3261e; }
+
+#mapwrap { position: relative; max-width: 720px; }
+#map { display: block; width: 100%; aspect-ratio: 1; touch-action: none; cursor: crosshair; }
+.hint { color: var(--ink-2); font-size: 13px; margin: 8px 0 0; max-width: 720px; }
+#legend { display: flex; flex-wrap: wrap; align-items: flex-start; margin-top: 10px; font-size: 12px; color: var(--ink-2); max-width: 720px; }
+#legend .t { margin-right: 10px; color: var(--ink); font-size: 13px; }
+#legend span.k { display: inline-block; width: 52px; text-align: center; }
+#legend span.k i { display: block; height: 12px; border-right: 2px solid var(--surface); }
+#legend span.k.none { margin-left: 10px; width: 60px; }
+#legend.fix { gap: 4px 18px; font-size: 13px; }
+#legend.fix span { display: inline-flex; align-items: center; gap: 7px; }
+#legend.fix i { display: inline-block; width: 22px; height: 0; border-top: 2px solid #8a9099; flex: none; }
+#legend.fix i.w { height: 12px; border: 0; background: color-mix(in srgb, var(--bearing) 30%, white); border-left: 2px solid var(--bearing); }
+#legend.fix i.h { border-top: 2px dashed var(--tdoa); }
+#legend.fix i.d { border-top: 3px solid var(--doppler); }
+#legend.fix i.e { width: 16px; height: 12px; border: 2px solid var(--ink); border-radius: 50%; }
+#legend.fix b { font: 600 15px var(--cond); color: var(--ink); width: 12px; text-align: center; }
+
+#tip { position: fixed; pointer-events: none; background: var(--ink); color: #fff; font-size: 13px; line-height: 1.35; padding: 6px 9px; border-radius: 4px; white-space: pre; z-index: 5; display: none; }
+
+#fixbar { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; margin-bottom: 12px; font-size: 14px; }
+#fixbar label { display: inline-flex; align-items: center; gap: 8px; }
+#heading { width: 150px; accent-color: var(--sea); }
+#fixsteps { margin: 0 0 14px; padding-left: 22px; max-width: 68ch; }
+#fixsteps li { margin-bottom: 6px; }
+#fixsteps li::marker { font: 600 15px var(--cond); }
+#fixsteps strong { font-weight: 600; }
+#fixnote { max-width: 68ch; margin: 0 0 8px; }
+.kdot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+.tablewrap { overflow-x: auto; }
+#fixrows tr:hover td, #fixrows tr.on td { background: #f3f5f7; }
+#fixrows tr.faint td { color: #9aa0a6; }
+
+#playbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+#scrub { flex: 1; accent-color: var(--sea); }
+#clock { font-variant-numeric: tabular-nums; color: var(--ink-2); width: 5.5em; text-align: right; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin-bottom: 14px; }
+th { text-align: left; font-weight: 500; color: var(--ink-2); font-size: 13px; vertical-align: bottom; }
+th, td { padding: 5px 12px 5px 0; border-bottom: 1px solid var(--line); }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; }
+.key { display: flex; gap: 18px; font-size: 13px; color: var(--ink-2); margin-bottom: 4px; flex-wrap: wrap; }
+.key i { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--ink); vertical-align: middle; margin-right: 6px; }
+.key i.bound { border-top-color: #9aa0a6; }
+.key i.thr { border-top: 1px dashed var(--ink); }
+.key i.off { height: 10px; border: 0; background: #e9ebee; }
+.boatchart { margin-top: 8px; }
+.boatchart h3 { font: 500 14px var(--sans); margin: 0; }
+.boatchart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.boatchart text { font: 11px var(--sans); fill: var(--ink-2); }
+
+aside { padding: 16px; align-self: start; }
+fieldset { border: 0; padding: 0; margin: 0 0 18px; }
+legend { font: 600 15px var(--cond); padding: 0; margin-bottom: 6px; }
+.check { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; margin-bottom: 7px; }
+.check input { margin-top: 4px; accent-color: var(--sea); }
+.check small, .row small { color: var(--ink-2); font-size: 12.5px; line-height: 1.3; display: block; }
+.row { margin-bottom: 10px; }
+.row label { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.row output { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+.row input[type=range] { width: 100%; margin: 2px 0 0; accent-color: var(--sea); }
+details { font-size: 13.5px; color: var(--ink-2); margin-top: 6px; }
+details summary { cursor: pointer; color: var(--ink); font-weight: 500; }
+details ul { margin: 6px 0 0; padding-left: 18px; }
+details li { margin-bottom: 4px; }
+a { color: var(--sea); }
+</style>
+</head>
+<body>
+<header>
+  <h1>DopplerBuoys</h1>
+  <p>How well can a field of hydrophone buoys track small boats across a 5 km square?</p>
+</header>
+<main>
+  <div>
+    <section class="chart">
+      <div class="modes" role="group" aria-label="What the map shows">
+        <button id="m-map" aria-pressed="true">Accuracy map</button>
+        <button id="m-fix" aria-pressed="false">How a fix is made</button>
+      </div>
+      <dl class="readout">
+        <div><dt>Average position error, best case</dt><dd id="r-score">–</dd></div>
+        <div><dt id="r-within-label">Typical error under 50 m in</dt><dd id="r-within">–</dd></div>
+        <div><dt>One buoy hears a boat out to</dt><dd id="r-range">–</dd></div>
+        <div><dt>Buoys</dt><dd id="r-count">–</dd></div>
+      </dl>
+      <div class="actions">
+        <button class="primary" id="optimise">Optimise layout</button>
+        <button id="undo" hidden>Undo optimise</button>
+        <button id="runbtn">Run boats</button>
+        <select id="preset" aria-label="Start from a grid of buoys">
+          <option value="">Start from a grid…</option>
+          <option value="4">4 buoys</option><option value="9">9 buoys</option>
+          <option value="16">16 buoys</option><option value="25">25 buoys</option>
+          <option value="0">No buoys</option>
+        </select>
+      </div>
+      <div id="status" role="status" aria-live="polite"></div>
+      <div id="mapwrap"><canvas id="map" aria-label="Map of the 5 km square with buoy positions"></canvas></div>
+      <div id="legend"></div>
+      <p class="hint" id="hint"></p>
+    </section>
+
+    <section class="chart" id="fixpanel" hidden>
+      <h2>From sound to position, one fix</h2>
+      <div id="fixbar">
+        <label>Boat <select id="target"></select></label>
+        <label id="headingrow">Heading <input type="range" id="heading" min="0" max="355" step="5" value="60"><output id="headingout">060°</output></label>
+      </div>
+      <p id="fixnote" hidden></p>
+      <ol id="fixsteps"></ol>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Buoy</th><th class="n">Range</th><th class="n">Sound level<br>arriving</th><th class="n">Above<br>sea noise</th>
+            <th class="n"><span class="kdot" style="background:var(--bearing)"></span>Bearing<br>to boat</th>
+            <th class="n"><span class="kdot" style="background:var(--doppler)"></span>Pitch heard<br>(shift)</th>
+            <th class="n"><span class="kdot" style="background:var(--tdoa)"></span>Arrival after<br>first buoy</th></tr></thead>
+          <tbody id="fixrows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="chart" id="results" hidden>
+      <h2>Three boats cross the square</h2>
+      <div id="playbar">
+        <button id="play">Pause</button>
+        <input type="range" id="scrub" min="0" max="299" value="0" aria-label="Time in the run">
+        <span id="clock">0:00</span>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Boat</th><th class="n">Engine pitch</th><th class="n">Median error<br>of fixes</th><th class="n" id="t-on">Within 50 m,<br>engine on</th><th class="n" id="t-all">Within 50 m,<br>all time in square</th></tr></thead>
+        <tbody id="boatrows"></tbody>
+      </table></div>
+      <div class="key">
+        <span><i></i>Error of each fix (boat's colour)</span>
+        <span><i class="bound"></i>Lowest error possible</span>
+        <span><i class="thr"></i>Tracked threshold</span>
+        <span><i class="off"></i>Engine off, boat silent</span>
+      </div>
+      <div id="charts"></div>
+    </section>
+  </div>
+
+  <aside>
+    <form id="settings"></form>
+    <details>
+      <summary>What this model leaves out</summary>
+      <ul>
+        <li>A boat with its engine off is silent. Its track ends where it was last heard.</li>
+        <li>Sound travels in straight lines through uniform water. Echoes off the seabed and surface are folded into the loss and timing error settings.</li>
+        <li>Arrival timing assumes the processing corrects for the boat moving during each listen. Without that, a 10 kn boat smears arrival times by about 25 ms.</li>
+        <li>Hydrophones on one buoy sit closer than half a wavelength, so they are given no gain over sea noise. Bearings assume each hydrophone's own noise is independent.</li>
+        <li>Boats are told apart by engine pitch. Two boats with the same pitch are not handled.</li>
+        <li>Buoys stay where you put them. Drift on the mooring is part of the timing error setting.</li>
+        <li>Sound takes up to 3 seconds to cross the square. The tracker ignores that delay.</li>
+      </ul>
+    </details>
+    <details id="sources">
+      <summary>Where the defaults come from</summary>
+      <ul>
+        <li>Loss over distance is set so one buoy hears a boat at about 3 km. <a href="https://www.pnnl.gov/main/publications/external/technical_reports/PNNL-19169.pdf">PNNL-19169</a> (Matzner and others, 2010) found a small vessel "could reliably be detected from 3–5 km away" with one hydrophone in water 6 to 7 m deep.</li>
+        <li>The same report measured about 126 dB from an outboard boat at 200 m. The default boat here comes to about 121 dB at 200 m, so it is on the quiet side.</li>
+        <li>Sea noise of 70 dB is a moderate sea on the Wenz curves (Wenz, 1962, Journal of the Acoustical Society of America 34). Shallow coastal water often runs higher. Not checked for the trial site.</li>
+        <li>The 16 dB signal threshold comes from this simulator's own audio test. Below about 15 dB the pitch measurement breaks down.</li>
+        <li>Pitch wobble and timing error are estimates with no source. Replace them with numbers from a field recording.</li>
+      </ul>
+    </details>
+  </aside>
+</main>
+<div id="tip"></div>
+
+<script>
+const SIZE = 5000, CAP = 500, MAX_BUOYS = 60;
+const BINS = [5, 10, 25, 50, 100, 250, 500];
+const RAMP = ['#cce3fd', '#9dc8f7', '#6aabf1', '#338ced', '#2370cd', '#1757ac', '#0e3d7e'];
+const BOAT = ['#ec4647', '#6a4ce2', '#008a17'];
+const $ = id => document.getElementById(id);
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const KIND = { bearing: css('--bearing'), doppler: css('--doppler'), tdoa: css('--tdoa') };
+
+// [key, label, step, format, note]
+const kn = v => `${v} m/s (${(v / 0.5144).toFixed(0)} kn)`;
+const GROUPS = [
+  ['Boat', [
+    ['sl', 'Engine tone loudness', 1, v => `${v} dB`, 'Estimate. dB re 1 µPa at 1 m, per tone.'],
+    ['f0', 'Engine pitch', 5, v => `${v} Hz`],
+    ['harmonics', 'Engine tones heard', 1, v => v, 'Tones at 1×, 2×, 3× the pitch. More tones sharpen bearing and Doppler.'],
+    ['speed', 'Boat speed for the map', 0.5, kn, 'Faster boats give a bigger Doppler shift.'],
+  ]],
+  ['Water', [
+    ['nl', 'Sea noise', 1, v => `${v} dB`, 'Calm sea about 60, moderate 70, rough 80.'],
+    ['spread', 'Loss with distance', 0.5, v => `${v} × log r`, '20 in deep open water, nearer 15 in shallow water.'],
+    ['alpha', 'Extra shallow-water loss', 0.5, v => `${v} dB/km`],
+  ]],
+  ['Buoy', [
+    ['hydrophones', 'Hydrophones per buoy', 1, v => v],
+    ['array_d', 'Hydrophone spread', 0.1, v => `${v} m`, 'Diameter of the ring of hydrophones. Wider gives a sharper bearing, until the tones start to alias.'],
+    ['window', 'Listening window', 0.5, v => `${v} s`, 'Longer hears further and updates less often.'],
+    ['detect_db', 'Signal needed above noise', 1, v => `${v} dB`, 'Below about 15 dB the pitch measurement breaks down.'],
+  ]],
+  ['Practical errors', [
+    ['compass_deg', 'Buoy compass error', 0.5, v => `${v}°`, 'Adds directly to every bearing.'],
+    ['clock_ms', 'Timing error per buoy', 0.5, v => `${v} ms`, 'Clock sync, buoy position and echoes. 2 ms is 3 m.'],
+    ['wobble_pct', 'Engine pitch wobble', 0.01, v => `${v}%`, 'Estimate. Pitch change that buoys do not see alike. A 10 kn boat shifts pitch by 0.3%.'],
+  ]],
+  ['Scoring', [
+    ['threshold', 'Tracked means within', 5, v => `${v} m`],
+  ]],
+];
+const ADVANCED = [
+  ['array_gain_db', 'Gain of the hydrophone ring over sea noise', 0.5, v => `${v} dB`, 'About 0 when hydrophones sit closer than half a wavelength. Up to 6 dB for four spaced well apart.'],
+  ['c', 'Speed of sound', 5, v => `${v} m/s`],
+  ['bb_offset', 'Engine hiss below tone level', 1, v => `${v} dB`, 'Arrival timing uses the hiss between the tones.'],
+  ['band_lo', 'Timing band, low', 10, v => `${v} Hz`],
+  ['band_hi', 'Timing band, high', 10, v => `${v} Hz`],
+];
+const MEASURES = [
+  ['use_bearing', 'Bearing from each buoy', 'From arrival times across one buoy\'s hydrophones. Needs a compass.'],
+  ['use_doppler', 'Doppler shift between buoys', 'Compares engine pitch heard at each buoy. Each buoy sends a few numbers.'],
+  ['use_tdoa', 'Arrival time between buoys', 'Compares when the sound reaches each buoy. Needs synchronised clocks and raw audio sent to shore.'],
+];
+
+let P = {}, buoys = [], map = null, run = null, frame = 0, playing = false, prevBuoys = null, seed = 1;
+let rev = 0;                 // bumps on every change to buoys or settings, so stale replies can be dropped
+let mode = 'map';            // 'map' or 'fix'
+let probe = { x: 2900, y: 2200, heading: 60 };
+let target = 'probe';        // 'probe' or the index of a boat in the run
+let ex = null, exNote = null; // the working behind one fix, or why there is none
+let hover = null, drag = null, focusB = null;
+
+function gridLayout(n) {
+  const k = Math.round(Math.sqrt(n)), out = [];
+  for (let i = 0; i < k; i++) for (let j = 0; j < k; j++) out.push([(i + 0.5) * SIZE / k, (j + 0.5) * SIZE / k]);
+  return out;
+}
+
+function say(text, error) { $('status').textContent = text; $('status').classList.toggle('error', !!error); }
+// a failed fetch is the server being down; anything else is a message from the server
+const fail = e => say(e instanceof TypeError ? 'Cannot reach the simulator. Start it with: uv run sim.py' : e.message, true);
+
+async function post(path, extra) {
+  const res = await fetch(path, { method: 'POST', body: JSON.stringify({ buoys, params: P, ...extra }) });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  return res.json();
+}
+// Wrap a refresh so only one runs at a time, with one more queued if asked again meanwhile.
+function latest(fn) {
+  let busy = false, again = false;
+  return async function go() {
+    if (busy) { again = true; return; }
+    busy = true;
+    try { await fn(); } catch (e) { fail(e); }
+    busy = false;
+    if (again) { again = false; go(); }
+  };
+}
+
+// ---------- settings panel ----------
+function buildSettings(settings) {
+  const form = $('settings');
+  const row = ([key, label, step, fmt, note]) => {
+    const [def, min, max] = settings[key];
+    P[key] = def;
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<label for="s-${key}">${label}<output id="o-${key}"></output></label>
+      <input type="range" id="s-${key}" min="${min}" max="${max}" step="${step}" value="${def}">${note ? `<small>${note}</small>` : ''}`;
+    const input = div.querySelector('input'), out = div.querySelector('output');
+    const show = () => { out.textContent = fmt(+input.value); };
+    input.addEventListener('input', () => { P[key] = +input.value; show(); changed(); });
+    show();
+    return div;
+  };
+  const group = (title, nodes) => {
+    const fs = document.createElement('fieldset');
+    fs.innerHTML = `<legend>${title}</legend>`;
+    fs.append(...nodes);
+    form.append(fs);
+  };
+  group('Measurements used', MEASURES.map(([key, label, note]) => {
+    P[key] = settings[key][0];
+    const lab = document.createElement('label');
+    lab.className = 'check';
+    lab.innerHTML = `<input type="checkbox" checked><span>${label}<small>${note}</small></span>`;
+    lab.querySelector('input').addEventListener('change', e => { P[key] = e.target.checked ? 1 : 0; changed(); });
+    return lab;
+  }));
+  GROUPS.forEach(([title, rows]) => group(title, rows.map(row)));
+  const adv = document.createElement('details');
+  adv.innerHTML = '<summary>Advanced</summary>';
+  adv.append(...ADVANCED.map(row));
+  adv.style.marginBottom = '14px';
+  form.append(adv);
+}
+
+// ---------- data ----------
+function changed() {
+  rev++;
+  run = null; playing = false; $('results').hidden = true;
+  if (target !== 'probe') { target = 'probe'; }
+  updateTargets();
+  refreshMap(); refreshFix();
+}
+
+const fmtM = e => `${e < 10 ? e.toFixed(1) : Math.round(e)} m`;
+const refreshMap = latest(async () => {
+  map = await post('/api/map');
+  if ($('status').classList.contains('error')) say('');
+  $('r-score').textContent = map.score >= CAP ? 'no fix' : fmtM(map.score);
+  $('r-within-label').textContent = `Typical error under ${P.threshold} m in`;
+  $('r-within').textContent = `${Math.round(map.within * 100)}% of the square`;
+  $('r-range').textContent = `${(map.detect_range / 1000).toFixed(1)} km`;
+  $('r-count').textContent = buoys.length;
+  draw();
+});
+
+const short = b => b.name.split(',')[0];
+function targetBoat() {
+  if (target === 'probe') {
+    const h = probe.heading * Math.PI / 180;  // compass heading: 0 is north, clockwise
+    return { state: [probe.x, probe.y, P.speed * Math.sin(h), P.speed * Math.cos(h), 1] };
+  }
+  const b = run.boats[target], at = b.true[frame];
+  if (!at) return { note: `${short(b)} has left the square.` };
+  if (b.silent[frame]) return { at, note: `${short(b)} has its engine off. It makes no sound, so no buoy can measure anything and there is no fix. The track stops where the boat was last heard.` };
+  const j = b.true[frame + 1] && !b.silent[frame + 1] ? frame : frame - 1;  // velocity from the neighbouring step
+  const p = b.true[j], q = b.true[j + 1];
+  const v = p && q ? [(q[0] - p[0]) / run.dt, (q[1] - p[1]) / run.dt] : [0, 0];
+  return { state: [at[0], at[1], v[0], v[1], b.f0 / P.f0] };
+}
+const refreshFix = latest(async () => {
+  if (mode !== 'fix') return;
+  const boat = targetBoat(), r = rev;
+  if (!boat.state) { ex = null; exNote = boat; }
+  else {
+    const out = await post('/api/explain', { boat: boat.state, seed: target === 'probe' ? 7 : frame + 1 });
+    if (r !== rev) return;  // the layout moved on; changed() has already queued a fresh one
+    ex = out; exNote = null;
+  }
+  renderFix(); draw();
+});
+
+// ---------- drawing ----------
+const cv = $('map'), ctx = cv.getContext('2d');
+// geo maps metres to canvas pixels: a square of `span` metres from (x0, y0), drawn `side` pixels wide at (ox, oy)
+let geo = { ox: 34, oy: 8, side: 100, x0: 0, y0: 0, span: SIZE };
+const X = m => geo.ox + (m - geo.x0) / geo.span * geo.side, Y = m => geo.oy + geo.side - (m - geo.y0) / geo.span * geo.side;
+const colour = e => e >= CAP ? null : RAMP[BINS.findIndex(b => e < b)];
+let hatch = null;
+function hatchPattern() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 8;
+  const g = c.getContext('2d');
+  g.fillStyle = '#f1f2f4'; g.fillRect(0, 0, 8, 8);
+  g.strokeStyle = '#cfd3d8'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(-2, 10); g.lineTo(10, -2); g.moveTo(-2, 2); g.lineTo(2, -2); g.moveTo(6, 10); g.lineTo(10, 6); g.stroke();
+  return ctx.createPattern(c, 'repeat');
+}
+function haloText(text, x, y, font = `600 12px ${css('--cond')}`) {
+  ctx.font = font; ctx.lineWidth = 3.5; ctx.strokeStyle = '#fff'; ctx.lineJoin = 'round';
+  ctx.strokeText(text, x, y); ctx.fillStyle = css('--ink'); ctx.fillText(text, x, y);
+}
+
+function draw() {
+  const w = cv.clientWidth, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr)) { cv.width = cv.height = Math.round(w * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, w);
+  geo = { ox: 34, oy: 8, side: w - 34 - 8 - 14, x0: 0, y0: 0, span: SIZE };
+  hatch = hatch || hatchPattern();
+  const { ox, oy, side } = geo, fix = mode === 'fix';
+  ctx.fillStyle = hatch; ctx.fillRect(ox, oy, side, side);
+
+  if (map) {
+    const n = map.grid.length, cell = side / n, thr = P.threshold;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const c = colour(map.grid[j][i]);
+      if (c) { ctx.fillStyle = c; ctx.fillRect(ox + i * cell - 0.3, oy + (n - 1 - j) * cell - 0.3, cell + 0.6, cell + 0.6); }
+    }
+    if (fix) { ctx.fillStyle = 'rgba(255,255,255,0.78)'; ctx.fillRect(ox, oy, side, side); }  // quieten the map under the working
+    else {
+      // outline of the region where the typical error is under the threshold
+      ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1.5; ctx.beginPath();
+      const ok = (j, i) => j >= 0 && i >= 0 && j < n && i < n && map.grid[j][i] < CAP && map.grid[j][i] <= thr;
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+        if (!ok(j, i)) continue;
+        const x0 = ox + i * cell, y0 = oy + (n - 1 - j) * cell;
+        if (!ok(j, i + 1) && i + 1 < n) { ctx.moveTo(x0 + cell, y0); ctx.lineTo(x0 + cell, y0 + cell); }
+        if (!ok(j, i - 1) && i > 0) { ctx.moveTo(x0, y0); ctx.lineTo(x0, y0 + cell); }
+        if (!ok(j + 1, i) && j + 1 < n) { ctx.moveTo(x0, y0); ctx.lineTo(x0 + cell, y0); }
+        if (!ok(j - 1, i) && j > 0) { ctx.moveTo(x0, y0 + cell); ctx.lineTo(x0 + cell, y0 + cell); }
+      }
+      ctx.stroke();
+    }
+  }
+
+  // 1 km grid and axis labels
+  ctx.font = `11px ${css('--sans')}`; ctx.fillStyle = css('--ink-2'); ctx.strokeStyle = fix ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1;
+  for (let k = 0; k <= 5; k++) {
+    if (k > 0 && k < 5) {
+      ctx.beginPath(); ctx.moveTo(X(k * 1000), oy); ctx.lineTo(X(k * 1000), oy + side); ctx.moveTo(ox, Y(k * 1000)); ctx.lineTo(ox + side, Y(k * 1000)); ctx.stroke();
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(k === 5 ? '5 km' : k, X(k * 1000), oy + side + 5);
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; if (k > 0) ctx.fillText(k, ox - 6, Y(k * 1000));
+  }
+  ctx.strokeStyle = css('--axis'); ctx.strokeRect(ox, oy, side, side);
+
+  if (fix) drawFix(); else if (run) drawBoats();
+
+  // hearing range of the buoy under the pointer
+  const focus = typeof drag === 'number' ? drag : hover;
+  if (!fix && map && focus != null && buoys[focus]) {
+    ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, side, side); ctx.clip();
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1.25;
+    ctx.beginPath(); ctx.arc(X(buoys[focus][0]), Y(buoys[focus][1]), map.detect_range / SIZE * side, 0, 7); ctx.stroke();
+    ctx.restore();
+  }
+  const live = fix && ex && ex.buoys.length === buoys.length;
+  buoys.forEach(([x, y], i) => {
+    ctx.beginPath(); ctx.arc(X(x), Y(y), i === focus || (fix && i === focusB) ? 8 : 6.5, 0, 7);
+    ctx.fillStyle = live && !ex.buoys[i].heard ? '#d5d8dc' : css('--buoy'); ctx.fill();
+    ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1.75; ctx.stroke();
+    if (fix) { ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; haloText(i + 1, X(x) - 7, Y(y) - 5); }
+  });
+  if (fix) drawCloseUp();
+}
+
+function drawBoats() {
+  run.boats.forEach((b, k) => {
+    const col = BOAT[k];
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; pathTo(b.true); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = 2; pathTo(b.true); ctx.stroke();
+    for (let i = 0; i <= frame; i++) {
+      const e = b.est[i];
+      if (!e || e[0] < 0 || e[1] < 0 || e[0] > SIZE || e[1] > SIZE) continue;
+      ctx.beginPath(); ctx.arc(X(e[0]), Y(e[1]), 2.6, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.beginPath(); ctx.arc(X(e[0]), Y(e[1]), 1.7, 0, 7); ctx.fillStyle = col; ctx.fill();
+    }
+    const at = b.true[frame];
+    if (!at) return;
+    const silent = b.silent[frame], x = X(at[0]), y = Y(at[1]);
+    ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fillStyle = silent ? '#fff' : col; ctx.fill();
+    ctx.strokeStyle = silent ? col : '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    haloText(short(b) + (silent ? ' (engine off)' : ''), x + 10, y - 10, `600 13px ${css('--cond')}`);
+  });
+}
+function pathTo(pts) {
+  ctx.beginPath();
+  let pen = false;
+  for (let i = 0; i <= frame; i++) { const p = pts[i]; if (!p) continue; pen ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])); pen = true; }
+}
+
+// Every place whose distance to buoy f1 exceeds its distance to buoy f2 by `diff` metres.
+function hyperbola(f1, f2, diff) {
+  const D = Math.hypot(f2[0] - f1[0], f2[1] - f1[1]);
+  if (Math.abs(diff) >= D) return;  // noise pushed the gap past what geometry allows
+  const a = diff / 2, b = Math.sqrt(D * D / 4 - a * a);
+  const ex_ = [(f2[0] - f1[0]) / D, (f2[1] - f1[1]) / D], mid = [(f1[0] + f2[0]) / 2, (f1[1] + f2[1]) / 2];
+  ctx.beginPath();
+  for (let t = -3.6; t <= 3.6; t += 0.08) {
+    const u = a * Math.cosh(t), v = b * Math.sinh(t);
+    const x = mid[0] + u * ex_[0] - v * ex_[1], y = mid[1] + u * ex_[1] + v * ex_[0];
+    t === -3.6 ? ctx.moveTo(X(x), Y(y)) : ctx.lineTo(X(x), Y(y));
+  }
+  ctx.stroke();
+}
+
+function drawFix() {
+  const main = geo;
+  ctx.save(); ctx.beginPath(); ctx.rect(main.ox, main.oy, main.side, main.side); ctx.clip();
+  fixLayer(false);
+  ctx.restore();
+}
+// Close-up around the boat, where the lines cross: sized to show the combined uncertainty and this fix.
+// Drawn last so it sits above the buoys.
+function drawCloseUp() {
+  const main = geo, ink = css('--ink');
+  if (!ex || ex.buoys.length !== buoys.length) return;
+  const [bx, by] = ex.boat, all = ex.shapes.all.ellipse[0];
+  const want = Math.max(40, 8 * all, ex.fix ? 3 * Math.hypot(ex.fix[0] - bx, ex.fix[1] - by) : 0);
+  const span = [50, 100, 200, 500, 1000, 2000].find(s => s >= want);
+  if (!span) return;  // nothing tight enough to zoom in on
+  const side = Math.min(200, main.side * 0.34);
+  const ox = bx > SIZE / 2 ? main.ox + 10 : main.ox + main.side - side - 10;  // the corner away from the boat
+  const oy = by < SIZE / 2 ? main.oy + 10 : main.oy + main.side - side - 10;
+  ctx.save();
+  ctx.fillStyle = '#fff'; ctx.fillRect(ox, oy, side, side);
+  ctx.beginPath(); ctx.rect(ox, oy, side, side); ctx.clip();
+  geo = { ox, oy, side, x0: bx - span / 2, y0: by - span / 2, span };
+  fixLayer(true);
+  geo = main;
+  ctx.restore();
+  ctx.strokeStyle = ink; ctx.lineWidth = 1.25; ctx.strokeRect(ox, oy, side, side);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  haloText(`Close-up, ${span} m across`, ox + 7, oy + 6);
+}
+// The working for one fix, drawn through whatever view `geo` holds. closeUp drops the labels and shrinks the boat.
+function fixLayer(closeUp) {
+  const ink = css('--ink');
+  if (!closeUp && run && target !== 'probe') { ctx.strokeStyle = 'rgba(25,25,25,0.3)'; ctx.lineWidth = 1.5; pathTo(run.boats[target].true); ctx.stroke(); }
+  if (ex && ex.buoys.length === buoys.length) {
+    const [x0, y0, vx, vy] = ex.boat, ref = ex.buoys.find(b => b.ref), scale = geo.side / geo.span;
+    ex.buoys.forEach((b, i) => {
+      const [bx, by] = buoys[i];
+      ctx.globalAlpha = focusB == null || focusB === i ? 1 : 0.12;
+      if (b.heard) {  // the sound itself
+        ctx.strokeStyle = '#8a9099'; ctx.lineWidth = 1; ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(X(x0), Y(y0)); ctx.lineTo(X(bx), Y(by)); ctx.stroke();
+      }
+      if (b.bearing != null) {  // bearing wedge: measured direction, plus and minus one sigma
+        const L = b.range * 1.2, s = Math.min(b.bearing_sigma, Math.PI);
+        ctx.beginPath(); ctx.moveTo(X(bx), Y(by));
+        for (let k = 0; k <= 12; k++) { const th = b.bearing - s + 2 * s * k / 12; ctx.lineTo(X(bx + L * Math.cos(th)), Y(by + L * Math.sin(th))); }
+        ctx.closePath();
+        if (!closeUp) { ctx.save(); ctx.globalAlpha *= 0.16; ctx.fillStyle = KIND.bearing; ctx.fill(); ctx.restore(); }  // up close the wedges cover everything
+        ctx.strokeStyle = KIND.bearing; ctx.lineWidth = 1.25;
+        ctx.beginPath(); ctx.moveTo(X(bx), Y(by)); ctx.lineTo(X(bx + L * Math.cos(b.bearing)), Y(by + L * Math.sin(b.bearing))); ctx.stroke();
+      }
+      if (b.delay != null && !b.ref && ref && ref.delay != null) {  // arrival-time gap against the reference buoy
+        ctx.strokeStyle = KIND.tdoa; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+        hyperbola(buoys[i], buoys[ex.buoys.indexOf(ref)], (b.delay - ref.delay) / 1000 * P.c);
+        ctx.setLineDash([]);
+      }
+      if (b.pitch != null) {  // Doppler: arrow along the sound path, towards the buoy when closing
+        const ux = (x0 - bx) / b.range, uy = (y0 - by) / b.range, len = Math.min(44, Math.abs(b.closing) * 7) / scale;
+        const near = 16 / scale, tail = b.closing > 0 ? near + len : near, head = b.closing > 0 ? near : near + len;
+        const hx = X(bx + ux * head), hy = Y(by + uy * head), tx = X(bx + ux * tail), ty = Y(by + uy * tail);
+        const ang = Math.atan2(hy - ty, hx - tx);
+        ctx.strokeStyle = ctx.fillStyle = KIND.doppler; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx, hy); ctx.stroke();
+        if (len * scale > 3) { ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx - 8 * Math.cos(ang - 0.45), hy - 8 * Math.sin(ang - 0.45)); ctx.lineTo(hx - 8 * Math.cos(ang + 0.45), hy - 8 * Math.sin(ang + 0.45)); ctx.closePath(); ctx.fill(); }
+        const shift = b.pitch - ex.f0;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        if (!closeUp) haloText(`${shift >= 0 ? '+' : '−'}${Math.abs(shift).toFixed(2)} Hz`, X(bx) + 9, Y(by) + 5, `500 11.5px ${css('--sans')}`);
+      }
+    });
+    ctx.globalAlpha = 1;
+    // where fixes fall: each method alone, then all together
+    ['bearing', 'doppler', 'tdoa', 'all'].forEach(k => {
+      const sh = ex.shapes[k];
+      if (!sh || sh.ellipse[0] == null || sh.ellipse[0] > 2500) return;
+      ctx.strokeStyle = k === 'all' ? ink : KIND[k]; ctx.lineWidth = k === 'all' ? 2 : 1.5;
+      ctx.beginPath(); ctx.ellipse(X(x0), Y(y0), Math.max(2, sh.ellipse[0] * scale), Math.max(2, sh.ellipse[1] * scale), -sh.ellipse[2], 0, 7); ctx.stroke();
+    });
+    if (ex.fix) {
+      const fx = X(ex.fix[0]), fy = Y(ex.fix[1]);
+      for (const [colr, wdt] of [['#fff', 5], [ink, 2]]) {
+        ctx.strokeStyle = colr; ctx.lineWidth = wdt;
+        ctx.beginPath(); ctx.moveTo(fx - 6, fy - 6); ctx.lineTo(fx + 6, fy + 6); ctx.moveTo(fx - 6, fy + 6); ctx.lineTo(fx + 6, fy - 6); ctx.stroke();
+      }
+    }
+    if (closeUp) { ctx.beginPath(); ctx.arc(X(x0), Y(y0), 3.5, 0, 7); ctx.fillStyle = ink; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); }
+    else boatMark(x0, y0, vx, vy, true);
+  } else if (exNote && exNote.at) boatMark(exNote.at[0], exNote.at[1], 0, 0, false);
+}
+function boatMark(x, y, vx, vy, on) {
+  const ink = css('--ink'), px = X(x), py = Y(y), sp = Math.hypot(vx, vy);
+  ctx.fillStyle = on ? ink : '#fff'; ctx.strokeStyle = on ? '#fff' : ink; ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (sp > 0.01) {  // a triangle pointing where the boat is going
+    const a = Math.atan2(-vy, vx);
+    ctx.moveTo(px + 11 * Math.cos(a), py + 11 * Math.sin(a));
+    ctx.lineTo(px + 8 * Math.cos(a + 2.5), py + 8 * Math.sin(a + 2.5));
+    ctx.lineTo(px + 8 * Math.cos(a - 2.5), py + 8 * Math.sin(a - 2.5));
+    ctx.closePath();
+  } else ctx.arc(px, py, 6, 0, 7);
+  ctx.fill(); ctx.stroke();
+}
+
+function buildLegend() {
+  const el = $('legend');
+  el.classList.toggle('fix', mode === 'fix');
+  if (mode === 'fix') {
+    el.innerHTML = `<span><i></i>Sound reaching a buoy</span>
+      <span><i class="w"></i>Bearing a buoy measured, with its uncertainty</span>
+      <span><i class="h"></i>Places that fit the arrival-time gap between two buoys</span>
+      <span><i class="d"></i>Boat closing on or opening from a buoy, with the pitch shift heard</span>
+      <span><i class="e"></i>Where two fixes in three fall. Coloured outlines are each method alone</span>
+      <span><b>×</b>This fix</span><span><b>▲</b>The boat (a dot in the close-up)</span>`;
+    $('hint').textContent = 'Drag the boat to try another spot. Grey buoys cannot hear it. Hover a row of the table to pick out one buoy. Buoys can still be added, dragged and removed here.';
+    return;
+  }
+  const labels = ['under 5', '5–10', '10–25', '25–50', '50–100', '100–250', '250–500'];
+  el.innerHTML = '<span class="t">Best possible position error, metres</span>' +
+    RAMP.map((c, i) => `<span class="k"><i style="background:${c}"></i>${labels[i]}</span>`).join('') +
+    '<span class="k none"><i style="background:repeating-linear-gradient(135deg,#f1f2f4 0 3px,#cfd3d8 3px 4px)"></i>no fix</span>';
+  $('hint').textContent = 'Click the map to add a buoy, drag a buoy to move it, right-click or double-click a buoy to remove it. The dark outline marks where the typical error is under the threshold. Errors are the lowest any tracker could reach from these measurements. About two fixes in three land closer than the typical error. Places with no fix count as 500 m in the average.';
+}
+
+// ---------- the working behind one fix ----------
+function updateTargets() {
+  $('target').innerHTML = '<option value="probe">Probe boat (drag it on the map)</option>' +
+    (run ? run.boats.map((b, k) => `<option value="${k}">${b.name}, from the run</option>`).join('') : '');
+  $('target').value = String(target);
+  $('headingrow').hidden = target !== 'probe';
+}
+const compass = rad => String(Math.round((90 - rad * 180 / Math.PI) % 360 + 360) % 360).padStart(3, '0') + '°';
+const median = a => a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : null;
+const km = m => `${(m / 1000).toFixed(1)} km`;
+function renderFix() {
+  $('fixnote').hidden = !exNote; $('fixsteps').hidden = !!exNote;
+  if (exNote) { $('fixnote').textContent = exNote.note; $('fixrows').innerHTML = ''; return; }
+  if (!ex) return;
+  if (!ex.buoys.length) { $('fixnote').hidden = false; $('fixsteps').hidden = true; $('fixnote').textContent = 'There are no buoys to hear the boat. Click the map to add some.'; $('fixrows').innerHTML = ''; return; }
+  const all = ex.buoys, heard = all.filter(b => b.heard), sh = ex.shapes;
+  const near = all.reduce((p, b) => b.range < p.range ? b : p), far = all.reduce((p, b) => b.range > p.range ? b : p);
+  const typical = k => !sh[k] ? 'switched off' : sh[k].error >= CAP ? 'no useful fix' : `about ${fmtM(sh[k].error)}`;
+  const bs = median(all.filter(b => b.bearing != null).map(b => b.bearing_sigma * 180 / Math.PI));
+  const ps = median(all.filter(b => b.pitch != null).map(b => b.pitch_sigma));
+  const ts = median(all.filter(b => b.delay != null).map(b => b.delay_sigma));
+  const maxShift = Math.max(0, ...all.filter(b => b.pitch != null).map(b => Math.abs(b.pitch_true - ex.f0)));
+  const reports = [
+    bs != null && `a bearing, good to about <strong>±${bs.toFixed(1)}°</strong>`,
+    ps != null && `the pitch it heard, shifted by up to <strong>${maxShift.toFixed(2)} Hz</strong> and measured to <strong>±${ps.toFixed(2)} Hz</strong>`,
+    ts != null && `when the sound arrived, to <strong>±${ts.toFixed(1)} ms</strong>`,
+  ].filter(Boolean);
+  const tones = P.harmonics > 1 ? `with ${P.harmonics - 1} overtone${P.harmonics > 2 ? 's' : ''}, each` : '';
+  $('fixsteps').innerHTML = `
+    <li>The engine hums at <strong>${ex.f0} Hz</strong> ${tones} at <strong>${P.sl} dB</strong> one metre from the boat.</li>
+    <li>The sound fades on the way out. It reaches the nearest buoy, ${km(near.range)} away, at <strong>${near.level} dB</strong> and the farthest, ${km(far.range)} away, at <strong>${far.level} dB</strong>.</li>
+    <li>A buoy can use a tone once it stands <strong>${P.detect_db} dB</strong> above the sea noise in a ${P.window} s listen. <strong>${heard.length} of ${all.length}</strong> buoys hear this boat.</li>
+    <li>${reports.length ? `Each buoy that hears it reports ${reports.join('; ')}.` : 'No buoy has anything to report, either because none hears the boat or because every measurement is switched off.'}</li>
+    <li>Shore fits one position to all the reports. Typical error with everything: <strong>${typical('all')}</strong>. Bearing alone: ${typical('bearing')}. Doppler alone: ${typical('doppler')}. Arrival time alone: ${typical('tdoa')}.
+      ${ex.fix ? `This fix landed <strong>${fmtM(ex.error)}</strong> from the boat.` : 'There is no fix this time: fewer than two buoys had anything to report.'}</li>`;
+  $('fixrows').innerHTML = all.map((b, i) => {
+    const shift = b.pitch == null ? null : b.pitch - ex.f0;
+    return `<tr data-b="${i}" class="${b.heard ? '' : 'faint'}"><td>${i + 1}</td><td class="n">${km(b.range)}</td><td class="n">${b.level} dB</td>
+      <td class="n">${b.snr} dB${b.heard ? '' : ', too faint'}</td>
+      <td class="n">${b.bearing == null ? '–' : `${compass(b.bearing)} ±${(b.bearing_sigma * 180 / Math.PI).toFixed(1)}°`}</td>
+      <td class="n">${shift == null ? '–' : `${b.pitch.toFixed(2)} Hz (${shift >= 0 ? '+' : '−'}${Math.abs(shift).toFixed(2)})`}</td>
+      <td class="n">${b.delay == null ? '–' : `${Math.round(b.delay)} ms ±${b.delay_sigma}`}</td></tr>`;
+  }).join('');
+}
+$('fixrows').addEventListener('pointerover', ev => { const tr = ev.target.closest('tr'); focusB = tr ? +tr.dataset.b : null; draw(); });
+$('fixrows').addEventListener('pointerleave', () => { focusB = null; draw(); });
+$('target').addEventListener('change', ev => { target = ev.target.value === 'probe' ? 'probe' : +ev.target.value; updateTargets(); refreshFix(); });
+$('heading').addEventListener('input', ev => { probe.heading = +ev.target.value; $('headingout').textContent = String(probe.heading).padStart(3, '0') + '°'; refreshFix(); });
+function setMode(m) {
+  mode = m; focusB = null;
+  $('m-map').setAttribute('aria-pressed', m === 'map'); $('m-fix').setAttribute('aria-pressed', m === 'fix');
+  $('fixpanel').hidden = m !== 'fix';
+  buildLegend(); updateTargets(); refreshFix(); draw();
+}
+$('m-map').addEventListener('click', () => setMode('map'));
+$('m-fix').addEventListener('click', () => setMode('fix'));
+
+// ---------- map interaction ----------
+const tip = $('tip');
+function showTip(text, ev) { tip.textContent = text; tip.style.display = 'block'; tip.style.left = Math.min(ev.clientX + 14, innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = ev.clientY + 16 + 'px'; }
+const hideTip = () => { tip.style.display = 'none'; };
+const pixel = ev => { const r = cv.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
+function metres(ev) { const [px, py] = pixel(ev); return [(px - geo.ox) / geo.side * SIZE, (geo.oy + geo.side - py) / geo.side * SIZE]; }
+const clamp = v => Math.max(0, Math.min(SIZE, v));
+function buoyAt(ev) {
+  const [px, py] = pixel(ev);
+  let best = null, bd = 14;
+  buoys.forEach(([x, y], i) => { const d = Math.hypot(X(x) - px, Y(y) - py); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+function onProbe(ev) { const [px, py] = pixel(ev); return mode === 'fix' && target === 'probe' && Math.hypot(X(probe.x) - px, Y(probe.y) - py) < 16; }
+const forgetUndo = () => { prevBuoys = null; $('undo').hidden = true; };
+function removeBuoy(i) { if (i != null) { buoys.splice(i, 1); hover = null; forgetUndo(); changed(); } }
+
+cv.addEventListener('pointerdown', ev => {
+  if (ev.button !== 0) return;
+  hideTip(); cv.setPointerCapture(ev.pointerId);
+  if (onProbe(ev)) { drag = 'probe'; return; }
+  let i = buoyAt(ev);
+  const [x, y] = metres(ev);
+  if (i == null) {
+    if (x < 0 || y < 0 || x > SIZE || y > SIZE) return;
+    if (buoys.length >= MAX_BUOYS) return say(`The simulator handles up to ${MAX_BUOYS} buoys.`, true);
+    buoys.push([x, y]); i = buoys.length - 1;
+  }
+  drag = i; changed();
+});
+cv.addEventListener('pointermove', ev => {
+  const [x, y] = metres(ev);
+  if (drag === 'probe') { probe.x = clamp(x); probe.y = clamp(y); refreshFix(); draw(); return; }
+  if (drag != null) { buoys[drag] = [clamp(x), clamp(y)]; changed(); return; }
+  const was = hover;
+  hover = buoyAt(ev);
+  cv.style.cursor = onProbe(ev) || hover != null ? 'grab' : 'crosshair';
+  if (mode === 'fix') {
+    focusB = hover;
+    document.querySelectorAll('#fixrows tr').forEach(tr => tr.classList.toggle('on', +tr.dataset.b === hover));
+    if (hover !== was) draw();
+    return hover != null ? showTip(`Buoy ${hover + 1}`, ev) : hideTip();
+  }
+  if (hover !== was) draw();
+  if (hover != null) showTip(`Buoy at ${(buoys[hover][0] / 1000).toFixed(2)}, ${(buoys[hover][1] / 1000).toFixed(2)} km\nDashed ring: how far it hears a boat`, ev);
+  else if (map && x >= 0 && y >= 0 && x < SIZE && y < SIZE) {
+    const n = map.grid.length, e = map.grid[Math.floor(y / SIZE * n)][Math.floor(x / SIZE * n)];
+    showTip(`${(x / 1000).toFixed(1)}, ${(y / 1000).toFixed(1)} km\n${e >= CAP ? 'No fix here' : `Best possible error about ${fmtM(e)}`}`, ev);
+  } else hideTip();
+});
+cv.addEventListener('pointerup', () => { if (typeof drag === 'number') forgetUndo(); drag = null; draw(); });
+cv.addEventListener('pointerleave', () => { hover = null; if (mode === 'fix') focusB = null; hideTip(); draw(); });
+cv.addEventListener('contextmenu', ev => { ev.preventDefault(); removeBuoy(buoyAt(ev)); });
+cv.addEventListener('dblclick', ev => removeBuoy(buoyAt(ev)));
+new ResizeObserver(draw).observe(cv);
+
+// ---------- buttons ----------
+$('preset').addEventListener('change', ev => {
+  if (ev.target.value === '') return;
+  buoys = gridLayout(+ev.target.value); ev.target.value = ''; forgetUndo(); changed();
+});
+// Optimise and Run are slow, so only one runs at a time and a reply for an old layout is dropped.
+async function slow(btn, label, working, job) {
+  $('optimise').disabled = $('runbtn').disabled = true;
+  btn.textContent = working;
+  try { await job(rev); } catch (e) { fail(e); }
+  $('optimise').disabled = $('runbtn').disabled = false;
+  btn.textContent = label;
+}
+$('optimise').addEventListener('click', ev => {
+  if (!buoys.length) return say('Add some buoys first. Click the map or pick a grid.', true);
+  slow(ev.target, 'Optimise layout', 'Optimising…', async was => {
+    say('Trying about 1,000 layouts. This takes a few seconds.');
+    const out = await post('/api/optimise', { seed: seed++ });
+    if (was !== rev) return say('The layout or settings changed while optimising, so that result was dropped.');
+    const before = buoys;
+    buoys = out.buoys; changed();
+    prevBuoys = before; $('undo').hidden = false;
+    say(`Average error went from ${fmtM(out.before)} to ${fmtM(out.after)}. Undo puts the buoys back.`);
+  });
+});
+$('undo').addEventListener('click', () => { if (prevBuoys) { buoys = prevBuoys; forgetUndo(); say('Layout restored.'); changed(); } });
+$('runbtn').addEventListener('click', ev => slow(ev.target, 'Run boats', 'Running…', async was => {
+  const out = await post('/api/run', { seed: seed++ });
+  if (was !== rev) return say('The layout or settings changed during the run. Run boats again.');
+  run = out; say(''); showRun();
+}));
+
+// ---------- run playback ----------
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+function setFrame(i) {
+  frame = Math.max(0, Math.min(run.boats[0].true.length - 1, i));
+  $('scrub').value = frame; $('clock').textContent = mmss(frame * run.dt);
+  document.querySelectorAll('.cursor').forEach(l => { const x = 40 + frame / (run.boats[0].true.length - 1) * 640; l.setAttribute('x1', x); l.setAttribute('x2', x); });
+  if (mode === 'fix' && target !== 'probe') refreshFix();
+  draw();
+}
+function tick() {
+  if (!playing || !run) return;
+  if (frame >= run.boats[0].true.length - 1) { playing = false; $('play').textContent = 'Replay'; return; }
+  setFrame(frame + 1);
+  setTimeout(() => requestAnimationFrame(tick), 30);
+}
+function play(on) { playing = on; $('play').textContent = on ? 'Pause' : 'Play'; if (on) tick(); }
+$('play').addEventListener('click', () => { if (!playing && frame >= run.boats[0].true.length - 1) setFrame(0); play(!playing); });
+$('scrub').addEventListener('input', ev => { play(false); setFrame(+ev.target.value); });
+
+function showRun() {
+  const steps = run.boats[0].true.length, thr = P.threshold;
+  $('results').hidden = false;
+  $('scrub').max = steps - 1;
+  $('t-on').innerHTML = `Within ${thr} m,<br>engine on`; $('t-all').innerHTML = `Within ${thr} m,<br>all time in square`;
+  const pct = v => `${Math.round(v * 100)}%`;
+  $('boatrows').innerHTML = run.boats.map((b, k) => `<tr><td><span class="sw" style="background:${BOAT[k]}"></span>${b.name}</td>
+    <td class="n">${b.f0} Hz</td><td class="n">${b.median_err == null ? 'never fixed' : b.median_err.toFixed(1) + ' m'}</td>
+    <td class="n">${pct(b.tracked)}</td><td class="n">${pct(b.tracked_all)}</td></tr>`).join('');
+  updateTargets();
+
+  // one small chart per boat: error over time on a log scale, 1 m to 1 km
+  const W = 700, H = 104, L = 40, T = 6, PW = 640, PH = 76;
+  const x = i => L + i / (steps - 1) * PW, y = e => T + PH - Math.log10(Math.max(1, Math.min(1000, e))) / 3 * PH;
+  const line = vals => { let d = '', pen = false; vals.forEach((v, i) => { if (v == null) { pen = false; return; } d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true; }); return d; };
+  $('charts').innerHTML = run.boats.map((b, k) => {
+    const off = b.silent.map((s, i) => s ? i : -1).filter(i => i >= 0);
+    const band = off.length ? `<rect x="${x(off[0])}" y="${T}" width="${x(off[off.length - 1]) - x(off[0])}" height="${PH}" fill="#e9ebee"/>` : '';
+    const ticks = [1, 10, 100, 1000].map(v => `<line x1="${L}" x2="${L + PW}" y1="${y(v)}" y2="${y(v)}" stroke="#e7e7e7"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v >= 1000 ? '1 km' : v + ' m'}</text>`).join('');
+    const mins = [0, 5, 10, 15, 20, 25, 30].map(m => `<text x="${L + m / 30 * PW}" y="${H - 6}" text-anchor="middle">${m}${m === 30 ? ' min' : ''}</text>`).join('');
+    return `<div class="boatchart"><h3><span class="sw" style="background:${BOAT[k]}"></span>${b.name}</h3>
+      <svg viewBox="0 0 ${W} ${H}" data-boat="${k}" role="img" aria-label="Position error over time for ${b.name}">
+        ${band}${ticks}${k === run.boats.length - 1 ? mins : ''}
+        <line x1="${L}" x2="${L + PW}" y1="${y(thr)}" y2="${y(thr)}" stroke="#191919" stroke-dasharray="3 3"/>
+        <path d="${line(b.bound)}" fill="none" stroke="#9aa0a6" stroke-width="1.5"/>
+        <path d="${line(b.err)}" fill="none" stroke="${BOAT[k]}" stroke-width="2" stroke-linejoin="round"/>
+        <line class="cursor" y1="${T}" y2="${T + PH}" stroke="#191919" stroke-width="1"/>
+        <rect x="${L}" y="${T}" width="${PW}" height="${PH}" fill="transparent"/>
+      </svg></div>`;
+  }).join('');
+  document.querySelectorAll('#charts svg').forEach(svg => {
+    svg.addEventListener('pointermove', ev => {
+      const r = svg.getBoundingClientRect(), b = run.boats[+svg.dataset.boat];
+      const i = Math.round(((ev.clientX - r.left) / r.width * W - L) / PW * (steps - 1));
+      if (i < 0 || i >= steps) return hideTip();
+      play(false); setFrame(i);
+      const state = !b.true[i] ? 'Left the square' : b.silent[i] ? 'Engine off, not heard' :
+        b.err[i] == null ? `No fix, heard by ${b.heard[i]} buoy${b.heard[i] === 1 ? '' : 's'}` :
+        `Error ${b.err[i].toFixed(1)} m\nLowest possible ${b.bound[i] >= 9999 ? 'none' : b.bound[i].toFixed(1) + ' m'}\nHeard by ${b.heard[i]} buoys`;
+      showTip(`${mmss(i * run.dt)}\n${state}`, ev);
+    });
+    svg.addEventListener('pointerleave', hideTip);
+  });
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  setFrame(still ? steps - 1 : 0);
+  play(!still);
+}
+
+// ---------- start ----------
+(async () => {
+  buildLegend();
+  try {
+    buildSettings(await (await fetch('/api/settings')).json());
+    buoys = gridLayout(9);
+    updateTargets();
+    refreshMap();
+  } catch (e) { fail(e); draw(); }
+})();
+</script>
+</body>
+</html>
